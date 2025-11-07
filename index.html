@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Quantum Interference Bloom — physics × art</title>
+  <style>
+    :root{
+      --bg:#07080f;
+      --grid:#0f1329;
+      --panel:#0b0f24cc; /* translucent */
+      --text:#e9f1ff;
+      --muted:#a7b4d6;
+      --accent:#5cf4ff;
+      --accent2:#ff4dd2;
+      --accent3:#9dff6a;
+    }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+      font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"SF Pro Display","Inter","Segoe UI","Helvetica Neue",Arial;
+    }
+
+    /* Swiss-style grid background */
+    body::before{
+      content:"";position:fixed;inset:0;pointer-events:none;opacity:0.25;
+      background:
+        linear-gradient(180deg,#0000 60%, rgba(255,255,255,.05) 100%),
+        radial-gradient(1200px 800px at 70% 30%, #0b0d1d 0%, #090b1a 45%, #050613 100%),
+        repeating-linear-gradient(0deg, var(--grid) 0 1px, #0000 1px 48px),
+        repeating-linear-gradient(90deg, var(--grid) 0 1px, #0000 1px 48px);
+      background-blend-mode: screen, normal, normal, normal;
+    }
+
+    /* Layout */
+    #wrap{position:fixed;inset:0;display:grid;grid-template-columns:1fr;}
+    canvas{width:100%;height:100%;display:block}
+
+    /* Glass panel */
+    .ui{position:fixed;right:16px;bottom:16px;max-width:min(92vw,420px);
+      background:linear-gradient(180deg,rgba(16,20,48,.75),rgba(6,8,24,.75));
+      border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(10px);
+      border-radius:16px;padding:14px 14px 12px;box-shadow:0 14px 36px rgba(0,0,0,.45);
+    }
+    .title{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .title h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.2px}
+    .pill{padding:2px 10px;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent3));color:#04121a;font-weight:700}
+
+    .row{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;margin:8px 0}
+    .row label{font-size:12px;color:var(--muted)}
+    input[type="range"]{width:100%}
+    .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    button{appearance:none;border:1px solid rgba(255,255,255,.1);background:#0f1233;color:var(--text);padding:8px 10px;border-radius:10px;cursor:pointer}
+    button:hover{border-color:rgba(255,255,255,.22)}
+
+    .eq{font-size:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);padding:10px;border-radius:12px;margin-top:8px}
+    .small{font-size:11px;color:var(--muted);margin-top:8px}
+    .kbd{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d1223;border:1px solid rgba(255,255,255,.08);padding:1px 6px;border-radius:6px}
+    .footer{position:fixed;left:12px;bottom:8px;font-size:11px;opacity:.7}
+
+    /* Accessibility */
+    .sr{position:absolute;left:-9999px}
+  </style>
+  <!-- MathJax -->
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="view" aria-label="Interference field"></canvas>
+  </div>
+
+  <section class="ui" role="region" aria-label="Controls">
+    <div class="title"><h1>Quantum Interference Bloom</h1><span class="pill">superposition \,+\, color</span></div>
+
+    <div class="row"><label for="lambda">Wavelength λ (px)</label><input id="lambda" type="range" min="12" max="120" value="48" step="1"/></div>
+    <div class="row"><label for="sep">Slit separation d (px)</label><input id="sep" type="range" min="10" max="220" value="140" step="2"/></div>
+    <div class="row"><label for="phase">Relative phase φ (rad)</label><input id="phase" type="range" min="0" max="6.283" value="0.0" step="0.001"/></div>
+    <div class="row"><label for="coh">Coherence \(\gamma\)</label><input id="coh" type="range" min="0" max="1" value="1" step="0.01"/></div>
+    <div class="row"><label for="exp">Exposure / gamma</label><input id="exp" type="range" min="0.6" max="2.2" value="1.0" step="0.01"/></div>
+    <div class="row"><label for="speed">Temporal frequency</label><input id="speed" type="range" min="0" max="4" value="1.2" step="0.1"/></div>
+    <div class="row"><label for="palette">Palette</label>
+      <select id="palette">
+        <option value="spectral">Spectral RGB</option>
+        <option value="neon">Neon Bloom</option>
+        <option value="duotone">Duotone</option>
+        <option value="mono">Monochrome</option>
+      </select>
+    </div>
+    <div class="btns">
+      <button id="play">Pause</button>
+      <button id="randomize">Randomize</button>
+      <button id="reset">Reset</button>
+      <button id="save">Save PNG</button>
+    </div>
+
+    <div class="eq" id="eqbox">
+      <div>Superposition: \(\;\psi(\mathbf r,t) = A\cos(k r_1-\omega t+\tfrac{\phi}{2}) + A\,\gamma\,\cos(k r_2-\omega t-\tfrac{\phi}{2})\;\)</div>
+      <div style="margin-top:4px">Intensity: \(\;I\propto\langle\psi^2\rangle = A^2\big[1+\gamma\cos\big(k(r_1-r_2)+\phi\big)\big]\;\)</div>
+    </div>
+
+    <div class="small">Drag on canvas to move the slits. Double‑click to recenter. Keys: <span class="kbd">Space</span> play/pause, <span class="kbd">r</span> reset, <span class="kbd">s</span> save, arrows tweak φ.</div>
+  </section>
+
+  <div class="footer">© Huzaifa — physics × design</div>
+
+  <script>
+    // ---------- Utilities ----------
+    const $ = id => document.getElementById(id);
+    const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+    // ---------- Canvas setup ----------
+    const cvs = $('view');
+    const ctx = cvs.getContext('2d', {alpha:false, willReadFrequently:false});
+    let DPR = Math.max(1, Math.min(2, window.devicePixelRatio||1));
+    let running = true, t = 0;
+
+    const state = {
+      lambda: 48,
+      sep: 140,
+      phase: 0,
+      coh: 1,
+      exp: 1.0,
+      speed: 1.2,
+      palette: 'spectral',
+      cx: 0.5, cy: 0.5, // slit center normalized
+      renderScale: 0.85
+    };
+
+    function resize(){
+      const w = Math.floor(innerWidth * DPR * state.renderScale);
+      const h = Math.floor(innerHeight * DPR * state.renderScale);
+      if (cvs.width!==w || cvs.height!==h){
+        cvs.width = w; cvs.height = h;
+        cvs.style.width = innerWidth + 'px';
+        cvs.style.height = innerHeight + 'px';
+      }
+    }
+    addEventListener('resize',()=>{DPR=Math.max(1, Math.min(2, devicePixelRatio||1)); resize();});
+
+    // ---------- Input ----------
+    let dragging=false, lastX=0, lastY=0;
+    cvs.addEventListener('pointerdown',e=>{dragging=true; lastX=e.clientX; lastY=e.clientY; cvs.setPointerCapture(e.pointerId)});
+    cvs.addEventListener('pointermove',e=>{
+      if(!dragging) return;
+      const dx=(e.clientX-lastX)/innerWidth; const dy=(e.clientY-lastY)/innerHeight;
+      state.cx = clamp(state.cx + dx, 0.1, 0.9);
+      state.cy = clamp(state.cy + dy, 0.1, 0.9);
+      lastX=e.clientX; lastY=e.clientY;
+    });
+    cvs.addEventListener('pointerup',e=>{dragging=false; cvs.releasePointerCapture(e.pointerId)});
+    cvs.addEventListener('dblclick',()=>{state.cx=0.5; state.cy=0.5;});
+
+    // ---------- UI wiring ----------
+    const controls = ['lambda','sep','phase','coh','exp','speed'];
+    function sync(){
+      state.lambda = +$('lambda').value;
+      state.sep    = +$('sep').value;
+      state.phase  = +$('phase').value;
+      state.coh    = +$('coh').value;
+      state.exp    = +$('exp').value;
+      state.speed  = +$('speed').value;
+      state.palette= $('palette').value;
+      if (window.MathJax) MathJax.typesetPromise?.();
+    }
+    controls.forEach(id=>$(id).addEventListener('input', sync));
+    $('palette').addEventListener('change', sync);
+
+    $('play').onclick=()=>{running=!running; $('play').textContent=running?'Pause':'Play'};
+    $('reset').onclick=()=>{
+      $('lambda').value=48; $('sep').value=140; $('phase').value=0; $('coh').value=1; $('exp').value=1.0; $('speed').value=1.2; $('palette').value='spectral';
+      state.cx=0.5; state.cy=0.5; sync();
+    };
+    $('randomize').onclick=()=>{
+      $('lambda').value = (12 + Math.random()*108)|0;
+      $('sep').value    = (10 + Math.random()*210)|0;
+      $('phase').value  = (Math.random()*Math.PI*2).toFixed(3);
+      $('coh').value    = Math.random().toFixed(2);
+      $('exp').value    = (0.8 + Math.random()*1.2).toFixed(2);
+      $('speed').value  = (Math.random()*4).toFixed(1);
+      const pal = ['spectral','neon','duotone','mono'];
+      $('palette').value = pal[(Math.random()*pal.length)|0];
+      sync();
+    };
+    $('save').onclick=()=>{
+      // upscale to full resolution for save
+      const tmp = document.createElement('canvas');
+      const W = Math.floor(innerWidth * DPR);
+      const H = Math.floor(innerHeight * DPR);
+      tmp.width=W; tmp.height=H;
+      const tctx=tmp.getContext('2d',{alpha:false});
+      tctx.drawImage(cvs,0,0,W,H);
+      const a=document.createElement('a'); a.href=tmp.toDataURL('image/png'); a.download='interference-bloom.png'; a.click();
+    };
+
+    addEventListener('keydown',e=>{
+      if(e.key===' '){$('play').click(); e.preventDefault();}
+      if(e.key==='r'){$('reset').click();}
+      if(e.key==='s'){$('save').click();}
+      if(e.key==='ArrowLeft'){ $('phase').value=(+$('phase').value-0.02).toFixed(3); sync(); }
+      if(e.key==='ArrowRight'){ $('phase').value=(+$('phase').value+0.02).toFixed(3); sync(); }
+    });
+
+    // ---------- Color maps ----------
+    function colormapSpectral(v){
+      // v in [0,1]; map to spectral RGB via simple piecewise
+      const x = v*5;
+      let r=0,g=0,b=0;
+      if(x<1){ r=0; g=x; b=1; }
+      else if(x<2){ r=0; g=1; b=2-x; }
+      else if(x<3){ r=x-2; g=1; b=0; }
+      else if(x<4){ r=1; g=4-x; b=0; }
+      else { r=1; g=0; b=x-4; }
+      return [Math.max(0,Math.min(1,r)), Math.max(0,Math.min(1,g)), Math.max(0,Math.min(1,b))];
+    }
+    function colormapNeon(v){
+      const r = Math.pow(v,0.6);
+      const g = Math.pow(1-Math.abs(v-0.5)*2,1.2);
+      const b = Math.pow(1-v,0.6);
+      return [r, g*0.8+0.2, b];
+    }
+    function colormapDuotone(v){
+      const a = [0.0, 0.8, 1.0]; // cyan-ish
+      const b = [1.0, 0.3, 0.8]; // magenta-ish
+      return [a[0]*(1-v)+b[0]*v, a[1]*(1-v)+b[1]*v, a[2]*(1-v)+b[2]*v];
+    }
+    function colormapMono(v){ return [v,v,v]; }
+
+    function getColor(v, mode){
+      if(mode==='spectral') return colormapSpectral(v);
+      if(mode==='neon') return colormapNeon(v);
+      if(mode==='duotone') return colormapDuotone(v);
+      return colormapMono(v);
+    }
+
+    // ---------- Renderer ----------
+    function render(){
+      const W = cvs.width, H = cvs.height;
+      const id = ctx.createImageData(W, H);
+      const data = id.data;
+
+      // Slit positions in pixels
+      const cx = state.cx * W, cy = state.cy * H;
+      const d = state.sep; // separation
+      const s1x = cx - d*0.5, s2x = cx + d*0.5;
+      const s1y = cy,       s2y = cy;
+
+      const k = 2*Math.PI / Math.max(6, state.lambda);
+      const omega = state.speed * 0.08; // animation rate
+      const phase = state.phase;
+      const coh = state.coh; // 0..1
+
+      // Precompute exposure/gamma curve
+      const gamma = state.exp;
+      const invGamma = 1/Math.max(0.01,gamma);
+
+      // Iterate pixels
+      let i=0; // data index
+      for(let y=0; y<H; y++){
+        for(let x=0; x<W; x++){
+          const dx1 = x - s1x, dy1 = y - s1y;
+          const dx2 = x - s2x, dy2 = y - s2y;
+          const r1 = Math.hypot(dx1, dy1) + 1e-6;
+          const r2 = Math.hypot(dx2, dy2) + 1e-6;
+          // envelope (fall-off like 1/r)
+          const env = 1/Math.sqrt(1 + 0.0008*(dx1*dx1 + dy1*dy1));
+
+          // instantaneous fields
+          const a1 = Math.cos(k*r1 - t*omega + phase*0.5);
+          const a2 = Math.cos(k*r2 - t*omega - phase*0.5);
+
+          // partial coherence: blend interference with incoherent sum
+          const Icoh = (1 + coh*Math.cos(k*(r1-r2) + phase)) * 0.5;
+          const Iinc = (a1*a1 + a2*a2) * 0.5; // time snapshot proxy
+          let I = env * (0.65*Icoh + 0.35*Iinc);
+
+          // normalize and tone-map
+          I = Math.max(0, Math.min(1, I));
+          const v = Math.pow(I, invGamma);
+
+          // palette
+          const [R,G,B] = getColor(v, state.palette);
+          data[i++] = (R*255)|0;
+          data[i++] = (G*255)|0;
+          data[i++] = (B*255)|0;
+          data[i++] = 255;
+        }
+      }
+      ctx.putImageData(id, 0, 0);
+    }
+
+    // ---------- Frame loop ----------
+    function loop(){
+      if(running){ t++; render(); }
+      requestAnimationFrame(loop);
+    }
+
+    // ---------- Init ----------
+    resize(); sync(); render(); loop();
+  </script>
+
+  <!-- Brief explanation (concise) -->
+  <section class="ui" style="left:16px; right:auto; bottom:auto; top:16px; max-width:min(92vw,520px)" aria-label="Explanation">
+    <div class="title"><h1>What you’re seeing</h1><span class="pill">concise</span></div>
+    <div class="small">
+      Two coherent sources emulate a double‑slit. The complex field at a screen point \(\mathbf r\) is the sum of two waves. Time‑averaging the square gives an intensity pattern
+      \( I(\mathbf r) \propto 1 + \gamma\cos\big(k(r_1 - r_2)+\phi\big) \), where \(k=2\pi/\lambda\). Changing \(\phi\) slides fringes; decreasing coherence \(\gamma\) washes them out. Color maps translate intensity to RGB to create a bloom‑like aesthetic.
+    </div>
+  </section>
+</body>
+</html>
